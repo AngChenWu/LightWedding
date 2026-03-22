@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>婚禮座位查詢系統 | 萊特薇庭</title>
+    <!-- 引入 Tailwind CSS (CDN) 用於快速排版 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 FontAwesome (CDN) 用於圖示 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        // 設定 Tailwind 自訂主題色 (香檳金)
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        champagne: {
+                            50: '#fbf9f6',
+                            100: '#f5efe6',
+                            200: '#eaddc9',
+                            300: '#dfc5a6',
+                            400: '#d1a87c',
+                            500: '#c5915b',
+                            600: '#ba7a4b',
+                            700: '#9b5f3f',
+                            800: '#7f4e37',
+                            900: '#67402f',
+                        }
+                    },
+                    fontFamily: {
+                        serif: ['"Noto Serif TC"', 'serif'],
+                        sans: ['"Noto Sans TC"', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* 自訂樣式與動畫 */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Noto+Serif+TC:wght@400;600&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fbf9f6; /* champagne-50 */
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        h1, h2, h3, .font-serif {
+            font-family: 'Noto Serif TC', serif;
+        }
+
+        /* 隱藏滾動條但保留滾動功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 地圖比例設定 (模擬萊特薇庭長形場地) */
+        .map-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 5 / 8;
+            background-color: #ffffff;
+            border-radius: 0.75rem;
+            border: 1px solid #eaddc9;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        /* 水波紋動畫 */
+        @keyframes ping-slow {
+            75%, 100% {
+                transform: scale(1.5);
+                opacity: 0;
+            }
+        }
+        .animate-ping-slow {
+            animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        /* 淡入動畫 */
+        .fade-in {
+            animation: fadeIn 0.4s ease-in-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Modal 出場動畫 */
+        .modal-enter {
+            animation: modalEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes modalEnter {
+            from { opacity: 0; transform: scale(0.95) translateY(20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .loading-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="text-gray-800 pb-24">
+
+    <!-- 頂部 Banner (加入一鍵更新按鈕與時間標示) -->
+    <header class="relative bg-white pt-4 pb-3 px-5 shadow-sm sticky top-0 z-30 border-b border-champagne-200 overflow-hidden flex justify-between items-center">
+        <!-- 背景光暈裝飾 -->
+        <div class="absolute -top-10 -left-10 w-24 h-24 bg-champagne-100 rounded-full opacity-70 blur-xl"></div>
+        <div class="absolute -bottom-10 -right-10 w-24 h-24 bg-champagne-200 rounded-full opacity-50 blur-xl"></div>
+        
+        <!-- 左側：標題與副標 -->
+        <div class="relative z-10 flex items-end gap-3">
+            <h1 class="text-xl font-serif text-gray-800 tracking-wider">
+                <span class="text-champagne-600 font-bold">萊特薇庭</span> 
+            </h1>
+            <div class="h-4 w-px bg-champagne-200 mb-1"></div>
+            <p class="text-xs text-gray-500 tracking-widest font-medium mb-0.5">座位查詢</p>
+        </div>
+        
+        <!-- 右側：時間與更新按鈕 -->
+        <div class="relative z-10 flex items-center gap-2.5">
+            <div class="flex flex-col items-end">
+                <div class="flex items-center gap-1 mb-0.5">
+                    <i class="fa-solid fa-leaf text-[8px] text-champagne-400"></i>
+                    <span class="text-[9px] font-bold tracking-widest text-champagne-500 uppercase leading-none">Wedding</span>
+                </div>
+                <span class="text-[10px] text-gray-400 font-medium leading-none" id="last-update-time">更新中...</span>
+            </div>
+            <button onclick="forceRefresh()" class="w-9 h-9 rounded-full bg-white border border-champagne-200 text-champagne-600 flex items-center justify-center hover:bg-champagne-50 hover:text-champagne-700 transition-all shadow-sm active:rotate-180 duration-500" title="同步最新資料">
+                <i class="fa-solid fa-arrows-rotate text-sm"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="p-4 max-w-md mx-auto mt-2" id="app-content">
+        <!-- 初始顯示載入中 -->
+        <div class="flex flex-col items-center justify-center py-24 fade-in">
+            <div class="relative w-16 h-16 flex items-center justify-center mb-6">
+                <div class="absolute inset-0 border-4 border-champagne-100 rounded-full"></div>
+                <div class="absolute inset-0 border-4 border-champagne-500 rounded-full border-t-transparent animate-spin"></div>
+                <i class="fa-solid fa-cloud-arrow-down text-champagne-500 text-xl absolute"></i>
+            </div>
+            <h2 class="text-lg font-bold text-champagne-800 mb-2 font-serif">正在同步最新名單</h2>
+            <p class="text-sm text-champagne-600 text-center px-6">直接從您的 Google Sheet 抓取<br>確保資料100%零缺漏</p>
+        </div>
+    </main>
+
+    <!-- 地圖 Modal (導引某個賓客的座位) -->
+    <div id="map-modal" class="fixed inset-0 z-50 bg-gray-900/60 backdrop-blur-sm hidden flex-col justify-center items-center p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh] border border-champagne-200 modal-enter">
+            
+            <!-- Modal Header -->
+            <div class="bg-white px-5 py-4 flex justify-between items-center border-b border-champagne-100 shrink-0">
+                <h3 class="text-gray-800 font-bold text-lg flex items-center">
+                    <i class="fa-solid fa-location-dot text-champagne-500 mr-2 fa-bounce"></i>
+                    導引至：<span id="modal-table-name" class="text-champagne-600 ml-1 font-serif"></span>
+                </h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-champagne-600 bg-gray-50 p-2 rounded-full transition-colors w-8 h-8 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Modal Map Content -->
+            <div class="p-5 bg-gradient-to-b from-white to-champagne-50/30 overflow-y-auto no-scrollbar relative" id="modal-map-container">
+                <!-- 地圖由 JS 渲染 -->
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="p-4 border-t border-champagne-50 bg-white shrink-0">
+                <button onclick="closeModal()" class="w-full bg-champagne-50 hover:bg-champagne-100 text-champagne-700 font-bold py-3 rounded-xl transition-colors border border-champagne-200">
+                    關閉地圖
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 桌次專屬名單 Modal (點擊地圖桌次時彈出) -->
+    <div id="table-guests-modal" class="fixed inset-0 z-[60] bg-gray-900/60 backdrop-blur-sm hidden flex-col justify-end sm:justify-center items-center p-0 sm:p-4 pb-0">
+        <div class="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh] modal-enter border-t border-champagne-200 sm:border">
+            
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-champagne-50 to-white px-5 py-4 flex justify-between items-center border-b border-champagne-100 shrink-0">
+                <h3 class="text-gray-800 font-bold text-lg flex items-center font-serif">
+                    <i class="fa-solid fa-users text-champagne-500 mr-2"></i>
+                    <span id="tg-modal-title" class="text-champagne-800"></span>
+                </h3>
+                <button onclick="closeTableGuestsModal()" class="text-gray-400 hover:text-champagne-600 bg-gray-50 p-2 rounded-full transition-colors w-8 h-8 flex items-center justify-center shadow-sm border border-gray-100">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- Content -->
+            <div class="p-5 overflow-y-auto no-scrollbar bg-gray-50/50" id="tg-modal-content">
+                <!-- 名單由 JS 渲染 -->
+            </div>
+            
+        </div>
+    </div>
+
+    <!-- 底部導覽列 -->
+    <nav class="fixed bottom-0 w-full bg-white/95 backdrop-blur-md border-t border-champagne-200 flex justify-around p-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40 pb-safe pointer-events-none opacity-50 transition-opacity" id="bottom-nav">
+        <button onclick="switchTab('search')" id="tab-search" class="flex flex-col items-center justify-center w-full py-2 rounded-xl transition-all duration-300 text-champagne-600 bg-champagne-50 pointer-events-auto">
+            <i class="fa-solid fa-magnifying-glass text-lg mb-1"></i>
+            <span class="text-[10px] font-bold tracking-wide">找賓客</span>
+        </button>
+        <button onclick="switchTab('tables')" id="tab-tables" class="flex flex-col items-center justify-center w-full py-2 rounded-xl transition-all duration-300 text-gray-400 hover:text-champagne-500 pointer-events-auto">
+            <i class="fa-solid fa-map text-lg mb-1"></i>
+            <span class="text-[10px] font-bold tracking-wide">全場桌次</span>
+        </button>
+    </nav>
+
+    <script>
+        // ==========================================
+        // 1. 動態資料庫與系統設定
+        // ==========================================
+        
+        // 您的 v2 表單 ID
+        const SHEET_ID = '1T41QM0sYNjI0PGDaVG6GQTxOYosJsZi9Qeqz9ftlgw8';
+        
+        // 【入座狀態同步 API】由 Google Apps Script 提供
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx5NMJvQO5XPIySj2RHewX4YRsD57U4uuwsS_j84GOtyza4-f9gFcnyIMCwf37nXNDgHw/exec'; 
+        
+        let guestData = [];
+        let globalSeatedColIdx = -1; // 紀錄「入座」欄位在 Sheet 中的 Index
+        let currentTab = 'search';
+        let searchTerm = '';
+
+        // 更新右上角的最後更新時間
+        function updateLastRefreshTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const timeElement = document.getElementById('last-update-time');
+            if (timeElement) {
+                timeElement.innerText = `最後更新 ${hours}:${minutes}`;
+            }
+        }
+
+        // 場地圖座標設定 (對應萊特薇庭平面圖)
+        const tablesPos = {
+            "主桌": { top: "22%", left: "50%", size: "22%" },
+            
+            // 左側區域 (靠牆)
+            "3 男方親友": { top: "42%", left: "20%" },
+            "5 男方親友": { top: "55%", left: "20%" },
+            "8 承億": { top: "68%", left: "20%" },
+            
+            // 中左區域
+            "2 男方親友": { top: "35%", left: "38%" },
+            "4 男方親友": { top: "48%", left: "38%" },
+            "6 承億": { top: "61%", left: "38%" },
+            "7 承億": { top: "74%", left: "38%" },
+            "9 新郎圓桌朋友": { top: "87%", left: "38%" },
+
+            // 中右區域
+            "10 女方大林親友": { top: "35%", left: "62%" },
+            "12 女方親友": { top: "48%", left: "62%" },
+            "14 女方大林親友": { top: "61%", left: "62%" },
+            "16 新人的好朋友": { top: "74%", left: "62%" },
+            "17 女方新營親友": { top: "87%", left: "62%" },
+
+            // 右側區域 (靠牆)
+            "11 女方內林親友": { top: "42%", left: "80%" },
+            "13 女方內林親友": { top: "55%", left: "80%" },
+            "15 女方內林親友": { top: "68%", left: "80%" },
+        };
+
+        // ==========================================
+        // 桌名正規化引擎
+        // ==========================================
+        function getFullTableName(rawTable) {
+            const str = String(rawTable).trim();
+            if (!str) return '未安排';
+            
+            if (str === '1' || str === '1桌' || str === '第1桌' || str.includes('主桌')) {
+                return '主桌';
+            }
+            
+            const match = str.match(/\d+/);
+            if (match) {
+                const num = match[0];
+                for (const key in tablesPos) {
+                    if (key.startsWith(num + " ")) {
+                        return key;
+                    }
+                }
+                return `${num}桌`;
+            }
+            return str;
+        }
+
+        // ==========================================
+        // 2. Google Sheet 即時抓取引擎
+        // ==========================================
+        async function fetchGoogleSheetData() {
+            try {
+                const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+                const response = await fetch(url);
+                const text = await response.text();
+                
+                const jsonString = text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1);
+                const data = JSON.parse(jsonString);
+
+                let allRows = [];
+                if (data.table.cols && data.table.cols.some(c => c && c.label)) {
+                    allRows.push(data.table.cols.map(c => c ? String(c.label).trim() : ''));
+                }
+                data.table.rows.forEach(r => {
+                    allRows.push(r.c.map(cell => {
+                        if (!cell) return '';
+                        if (cell.f !== undefined && cell.f !== null) return String(cell.f).trim();
+                        if (cell.v !== undefined && cell.v !== null) return String(cell.v).trim();
+                        return '';
+                    }));
+                });
+
+                let headerRowIdx = -1;
+                let nameIdx = -1;
+                let tableIdx = -1;
+
+                // 掃描標題列，加入尋找「入座狀態」欄位
+                for (let i = 0; i < Math.min(allRows.length, 5); i++) {
+                    const row = allRows[i];
+                    const nIdx = row.findIndex(c => c && (c.includes('姓名') || c.includes('名字') || c.includes('賓客') || c.includes('稱呼') || c.includes('出席') || c.toLowerCase().includes('name')));
+                    const tIdx = row.findIndex(c => c && (c.includes('桌') || c.includes('座位') || c.toLowerCase().includes('table')));
+                    
+                    if (nIdx !== -1 || tIdx !== -1) {
+                        headerRowIdx = i;
+                        nameIdx = nIdx;
+                        tableIdx = tIdx;
+                        // 找尋入座欄位
+                        globalSeatedColIdx = row.findIndex(c => c && (c.includes('入座') || c.includes('報到') || c.includes('出席狀態')));
+                        break;
+                    }
+                }
+
+                let isHeaderFound = headerRowIdx !== -1;
+                
+                if (!isHeaderFound) {
+                    headerRowIdx = 0;
+                    nameIdx = 0; 
+                    tableIdx = 1; 
+                    
+                    for (let c = 1; c < allRows[0].length; c++) {
+                        let sample = allRows.slice(0, 5).map(r => r[c] || '').join(' ');
+                        if (sample.includes('桌') || Object.keys(tablesPos).some(k => sample.includes(k))) {
+                            tableIdx = c;
+                            break;
+                        }
+                    }
+                } else {
+                    if (nameIdx === -1) nameIdx = 0;
+                    if (tableIdx === -1) {
+                        for (let c = 0; c < allRows[headerRowIdx].length; c++) {
+                            if (c === nameIdx) continue;
+                            let sample = allRows.slice(headerRowIdx + 1, headerRowIdx + 6).map(r => r[c] || '').join(' ');
+                            if (sample.includes('桌') || Object.keys(tablesPos).some(k => sample.includes(k))) {
+                                tableIdx = c;
+                                break;
+                            }
+                        }
+                        if (tableIdx === -1) tableIdx = 1;
+                    }
+                }
+
+                const headers = isHeaderFound ? allRows[headerRowIdx] : [];
+                let parsedGuests = [];
+                let startIndex = isHeaderFound ? headerRowIdx + 1 : 0;
+                
+                // 紀錄名字出現次數 (解決重複名字發兩次喜餅的問題)
+                let seenNamesCount = {};
+
+                // 3. 開始解析所有賓客
+                for (let i = startIndex; i < allRows.length; i++) {
+                    const row = allRows[i];
+                    if (!row || row.length === 0) continue;
+
+                    const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
+                    if (!name || name === '') continue; // 跳過空列
+
+                    // 紀錄出現次數
+                    if (!seenNamesCount[name]) seenNamesCount[name] = 0;
+                    seenNamesCount[name]++;
+
+                    let rawTable = row[tableIdx] ? String(row[tableIdx]).trim() : '未安排';
+                    let table = getFullTableName(rawTable);
+
+                    let tags = [];
+                    // 解析入座狀態
+                    let seated = false;
+                    if (globalSeatedColIdx !== -1) {
+                        const sVal = row[globalSeatedColIdx] ? String(row[globalSeatedColIdx]).trim().toLowerCase() : '';
+                        if (sVal === 'v' || sVal === 'y' || sVal === '1' || sVal === '是' || sVal === 'true') {
+                            seated = true;
+                        }
+                    }
+
+                    if (isHeaderFound) {
+                        headers.forEach((colName, idx) => {
+                            if (idx !== nameIdx && idx !== tableIdx && colName) {
+                                // 過濾多餘的系統與備用桌位欄位
+                                if (colName.includes('桌') || colName.includes('座位') || colName.toLowerCase().includes('table')) return;
+                                // 排除用來當標籤的「入座狀態」欄位
+                                if (idx === globalSeatedColIdx) return;
+
+                                const val = row[idx] ? String(row[idx]).trim() : '';
+                                if (val && val !== '0' && val.toLowerCase() !== 'false' && val.toLowerCase() !== 'no' && val !== '否' && val !== '#N/A') {
+                                    
+                                    // 【喜餅處理邏輯】
+                                    if (colName.includes('喜餅')) {
+                                        // 重複的第二個人不會領喜餅，直接略過
+                                        if (seenNamesCount[name] > 1) return; 
+
+                                        // 若寫 1+1, 1+2 等特殊數量，則清楚顯示
+                                        if (val !== '1' && val.toLowerCase() !== 'v' && val.toLowerCase() !== 'y' && val !== '是') {
+                                            tags.push(`喜餅 ${val}`);
+                                        } else {
+                                            tags.push('喜餅');
+                                        }
+                                        return;
+                                    }
+
+                                    // 其他常規標籤處理
+                                    if (val.toLowerCase() === 'v' || val.toLowerCase() === 'y' || val === '1' || val === '是') {
+                                        tags.push(colName);
+                                    } else if (val === colName) {
+                                        tags.push(val); 
+                                    } else {
+                                        if (colName.includes('備註') || colName.includes('標籤') || colName.includes('飲食')) {
+                                            tags.push(val);
+                                        } else {
+                                            tags.push(`${colName}: ${val}`);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    // 儲存賓客資訊，sheetRowNumber 用於後續回寫資料 (1-based index)
+                    parsedGuests.push({ 
+                        sheetRowNumber: i + 1, 
+                        name, 
+                        table, 
+                        tags, 
+                        seated 
+                    });
+                }
+
+                guestData = parsedGuests;
+                
+                document.getElementById('bottom-nav').classList.remove('pointer-events-none', 'opacity-50');
+                
+                // 【修正BUG】：使用 switchTab 重置底部按鈕的 class 樣式，避免被 forceRefresh 鎖住
+                switchTab(currentTab);
+                
+                updateLastRefreshTime(); // 更新時間顯示
+
+            } catch (error) {
+                console.error('資料讀取失敗:', error);
+                document.getElementById('app-content').innerHTML = `
+                    <div class="flex flex-col items-center justify-center py-20 fade-in text-center px-4">
+                        <i class="fa-solid fa-triangle-exclamation text-5xl text-red-400 mb-4"></i>
+                        <h2 class="text-lg font-bold text-gray-800 mb-2">無法讀取 Google Sheet 資料</h2>
+                        <p class="text-sm text-gray-500">請確認您的試算表權限已設定為<br><span class="font-bold text-champagne-600">「知道連結的使用者皆可查看」</span></p>
+                    </div>
+                `;
+            }
+        }
+
+        // ==========================================
+        // 入座狀態切換與同步 (Sync API)
+        // ==========================================
+        function toggleSeated(rowNum) {
+            const guest = guestData.find(g => g.sheetRowNumber === rowNum);
+            if (!guest) return;
+
+            // 1. 本地端即時切換狀態 (Optimistic UI)
+            guest.seated = !guest.seated;
+            
+            // 更新背景與按鈕畫面
+            render();
+
+            // 若目前彈窗正開啟，也同步更新彈窗內的狀態
+            const tgModal = document.getElementById('table-guests-modal');
+            if (!tgModal.classList.contains('hidden')) {
+                const currentTable = document.getElementById('tg-modal-title').innerText;
+                openTableGuestsModal(currentTable);
+            }
+
+            // 2. 準備回寫 Google Sheet
+            if (globalSeatedColIdx === -1) {
+                // 如果表單沒有入座欄位，僅做本地切換
+                console.warn("未偵測到『入座』欄位，無法同步至雲端。");
+                return;
+            }
+
+            if (!APPS_SCRIPT_URL) {
+                console.warn("尚未設定 APPS_SCRIPT_URL，僅能在本地端變更狀態。");
+                return;
+            }
+
+            // 傳送背景 POST 請求 (使用 form-urlencoded 避免 CORS)
+            const value = guest.seated ? 'v' : '';
+            fetch(APPS_SCRIPT_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: `sheetId=${SHEET_ID}&row=${guest.sheetRowNumber}&col=${globalSeatedColIdx}&value=${value}`
+            }).catch(err => console.error("同步至雲端失敗", err));
+        }
+
+        function forceRefresh() {
+            // 切換為載入狀態時更新文字
+            const timeElement = document.getElementById('last-update-time');
+            if (timeElement) timeElement.innerText = '更新中...';
+
+            guestData = [];
+            currentTab = 'search';
+            searchTerm = '';
+            
+            document.getElementById('tab-search').className = 'flex flex-col items-center justify-center w-full py-2 rounded-xl transition-all duration-300 text-champagne-600 bg-champagne-50 pointer-events-none';
+            document.getElementById('tab-tables').className = 'flex flex-col items-center justify-center w-full py-2 rounded-xl transition-all duration-300 text-gray-400 hover:text-champagne-500 pointer-events-none';
+            document.getElementById('bottom-nav').classList.add('pointer-events-none', 'opacity-50');
+
+            const container = document.getElementById('app-content');
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center py-24 fade-in">
+                    <div class="relative w-16 h-16 flex items-center justify-center mb-6">
+                        <div class="absolute inset-0 border-4 border-champagne-100 rounded-full"></div>
+                        <div class="absolute inset-0 border-4 border-champagne-500 rounded-full border-t-transparent animate-spin"></div>
+                        <i class="fa-solid fa-cloud-arrow-down text-champagne-500 text-xl absolute"></i>
+                    </div>
+                    <h2 class="text-lg font-bold text-champagne-800 mb-2 font-serif">正在同步最新名單</h2>
+                    <p class="text-sm text-champagne-600 text-center px-6">直接從您的 Google Sheet 抓取<br>確保資料100%零缺漏</p>
+                </div>
+            `;
+            fetchGoogleSheetData();
+        }
+
+        // ==========================================
+        // 3. 系統核心邏輯與畫面渲染
+        // ==========================================
+
+        function generateMapHTML(highlightTable = null) {
+            let tablesHTML = '';
+            
+            for (const [mapTableName, pos] of Object.entries(tablesPos)) {
+                const isHighlighted = highlightTable ? (mapTableName === highlightTable) : false;
+                
+                // 【全桌入座判定】：取得該桌所有賓客，若數量 > 0 且全部入座，桌子變綠色
+                const guestsInTable = guestData.filter(g => g.table === mapTableName);
+                const totalGuests = guestsInTable.length;
+                const seatedGuests = guestsInTable.filter(g => g.seated).length;
+                const isTableFull = totalGuests > 0 && (totalGuests === seatedGuests);
+
+                const size = pos.size || "15%"; 
+                
+                // 基本樣式 (全滿為綠色，預設為白色)
+                let baseClass = isTableFull 
+                    ? "bg-green-500 border-green-600 text-white shadow-[0_0_15px_rgba(34,197,94,0.5)] z-10"
+                    : "bg-white border-champagne-300 text-gray-500 z-10 hover:border-champagne-500 hover:bg-champagne-50";
+                
+                // 搜尋導引時的高光樣式 (香檳金呼吸燈)
+                const highlightClass = "bg-gradient-to-br from-champagne-400 to-champagne-600 border-champagne-400 text-white shadow-[0_0_20px_rgba(197,145,91,0.8)] scale-125 z-30 font-bold";
+                
+                const finalClass = isHighlighted ? highlightClass : baseClass;
+                const textColorClass = (isHighlighted || isTableFull) ? 'text-white' : '';
+                
+                let shortName = mapTableName;
+                if(mapTableName !== "主桌") {
+                    let parts = mapTableName.split(" ");
+                    if(parts.length > 1) {
+                        shortName = `${parts[0]}<br><span class="text-[8px] sm:text-[9px] leading-none">${parts[1]}</span>`;
+                    }
+                }
+
+                tablesHTML += `
+                    <button onclick="openTableGuestsModal('${mapTableName}')"
+                         class="absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] flex flex-col items-center justify-center text-center shadow-sm transition-all duration-300 cursor-pointer focus:outline-none ${finalClass}"
+                         style="top: ${pos.top}; left: ${pos.left}; width: ${size};">
+                        <span class="text-[10px] sm:text-[11px] leading-tight ${textColorClass} pointer-events-none">
+                            ${shortName}
+                        </span>
+                        ${isHighlighted ? `<span class="absolute inset-0 rounded-full animate-ping-slow border-2 border-champagne-300 opacity-75 pointer-events-none"></span>` : ''}
+                    </button>
+                `;
+            }
+
+            return `
+                <div class="map-container font-sans text-xs">
+                    <div class="absolute top-[2%] left-1/2 -translate-x-1/2 w-1/2 h-[8%] bg-gradient-to-r from-champagne-50 via-white to-champagne-50 border border-champagne-200 rounded flex items-center justify-center font-bold text-champagne-700 shadow-sm z-10">
+                        舞 台
+                    </div>
+                    <div class="absolute top-[40%] left-0 w-[5%] h-[20%] border-r-2 border-y-2 border-gray-300 bg-gray-50 rounded-r flex items-center justify-center">
+                        <span class="text-gray-400 text-[8px] writing-vertical transform -rotate-90 whitespace-nowrap">出入口</span>
+                    </div>
+                    <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[25%] h-[5%] border-t-2 border-x-2 border-champagne-300 bg-champagne-50 rounded-t flex items-end justify-center pb-1">
+                        <span class="text-champagne-600 text-[9px] font-bold tracking-widest">大 門</span>
+                    </div>
+                    ${tablesHTML}
+                </div>
+            `;
+        }
+
+        function renderSearchResults() {
+            const resultsContainer = document.getElementById('search-results');
+            const clearBtn = document.getElementById('clear-btn-container');
+            if (!resultsContainer) return;
+
+            if (searchTerm) {
+                clearBtn.classList.remove('hidden');
+            } else {
+                clearBtn.classList.add('hidden');
+            }
+
+            const filtered = guestData.filter(g => 
+                g.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                g.table.includes(searchTerm)
+            );
+
+            let resultsHTML = '';
+            
+            if (!searchTerm) {
+                resultsHTML = `
+                    <div class="text-center py-12 text-gray-400 fade-in">
+                        <div class="w-16 h-16 mx-auto bg-champagne-50 rounded-full flex items-center justify-center mb-4 border border-champagne-100">
+                            <i class="fa-solid fa-users text-2xl text-champagne-400"></i>
+                        </div>
+                        <p class="text-base text-gray-500 font-medium">請輸入賓客姓名進行查詢</p>
+                        <p class="text-xs mt-2 text-gray-400">目前資料庫共有 <span class="text-champagne-600 font-bold">${guestData.length}</span> 個座位</p>
+                    </div>
+                `;
+            } else if (filtered.length === 0) {
+                resultsHTML = `
+                    <div class="text-center py-12 bg-white rounded-2xl shadow-sm border border-champagne-100 fade-in">
+                        <p class="text-gray-500 text-base font-medium">找不到符合「${searchTerm}」的賓客</p>
+                        <p class="text-xs mt-2 text-gray-400">請確認是否為別名或錯別字</p>
+                    </div>
+                `;
+            } else {
+                resultsHTML = `
+                    <div class="fade-in">
+                        <p class="text-xs text-champagne-600 px-1 font-medium tracking-wide mb-3">找到 ${filtered.length} 個座位：</p>
+                        <div class="grid grid-cols-2 gap-3">
+                            ${filtered.map(guest => `
+                                <div class="bg-white p-3.5 rounded-2xl shadow-sm border-t-[4px] flex flex-col h-full transition-colors duration-300 ${guest.seated ? 'border-green-500 bg-green-50/40' : 'border-champagne-500'}">
+                                    <div>
+                                        <h2 class="text-lg font-serif font-bold ${guest.seated ? 'text-green-800' : 'text-gray-800'} mb-1 truncate" title="${guest.name}">${guest.name}</h2>
+                                        <div class="inline-flex items-center font-medium text-[11px] px-2 py-0.5 rounded-md border max-w-full mb-2 ${guest.seated ? 'bg-green-100 text-green-700 border-green-200' : 'bg-champagne-50 text-champagne-700 border-champagne-100'}" title="${guest.table}">
+                                            <i class="fa-solid fa-map-pin w-3 mr-1 ${guest.seated ? 'text-green-600' : 'text-champagne-500'} shrink-0"></i>
+                                            <span class="truncate">${guest.table}</span>
+                                        </div>
+                                    </div>
+                                    
+                                    ${guest.tags.length > 0 ? `
+                                        <div class="flex flex-wrap gap-1 mb-3">
+                                            ${guest.tags.map(tag => {
+                                                let icon = '';
+                                                if (tag.includes('兒童')) icon = `<i class="fa-solid fa-baby mr-1 ${guest.seated ? 'text-green-600' : 'text-champagne-500'}"></i>`;
+                                                else if (tag.includes('喜餅')) icon = `<i class="fa-solid fa-gift mr-1 ${guest.seated ? 'text-green-600' : 'text-champagne-500'}"></i>`;
+                                                else if (tag.includes('素食')) icon = '<i class="fa-solid fa-leaf mr-1 text-green-500"></i>';
+                                                return `
+                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-white text-gray-600 border ${guest.seated ? 'border-green-200' : 'border-champagne-200'} shadow-sm max-w-full">
+                                                    ${icon}<span class="truncate">${tag}</span>
+                                                </span>`;
+                                            }).join('')}
+                                        </div>
+                                    ` : ''}
+                                    
+                                    <!-- 底部雙按鈕區 -->
+                                    <div class="mt-auto pt-2 flex gap-1.5">
+                                        <button onclick="toggleSeated(${guest.sheetRowNumber})" class="flex-1 py-2 rounded-xl flex items-center justify-center font-bold text-[11px] transition-colors shadow-sm border active:scale-95 ${guest.seated ? 'bg-green-500 text-white border-green-600' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-green-50'}">
+                                            <i class="fa-solid ${guest.seated ? 'fa-check' : 'fa-clipboard-check'} mr-1"></i>
+                                            ${guest.seated ? '已入座' : '標記入座'}
+                                        </button>
+                                        <button onclick="openModal('${guest.table}')" class="flex-1 bg-white hover:bg-champagne-50 text-champagne-600 font-bold py-2 rounded-xl flex items-center justify-center border border-champagne-200 transition-colors shadow-sm text-[11px] active:scale-95">
+                                            <i class="fa-solid fa-location-crosshairs mr-1"></i>
+                                            導引
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            resultsContainer.innerHTML = resultsHTML;
+        }
+
+        function render() {
+            const container = document.getElementById('app-content');
+            
+            if (currentTab === 'search') {
+                const existingInput = document.getElementById('searchInput');
+                if (!existingInput) {
+                    container.innerHTML = `
+                        <div class="space-y-5 fade-in">
+                            <div class="relative">
+                                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                    <i class="fa-solid fa-magnifying-glass text-champagne-400"></i>
+                                </div>
+                                <input type="text" id="searchInput" 
+                                    class="block w-full pl-11 pr-10 py-4 border border-champagne-200 rounded-2xl leading-5 bg-white placeholder-gray-300 focus:outline-none focus:border-champagne-400 focus:ring-2 focus:ring-champagne-100 text-lg shadow-sm transition-all"
+                                    placeholder="請輸入賓客姓名..."
+                                    value="${searchTerm}">
+                                <div id="clear-btn-container" class="absolute inset-y-0 right-0 pr-4 flex items-center hidden">
+                                    <button onclick="clearSearch()" class="text-gray-300 hover:text-champagne-500 transition-colors">
+                                        <i class="fa-solid fa-circle-xmark text-lg"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="search-results"></div>
+                        </div>
+                    `;
+
+                    const input = document.getElementById('searchInput');
+                    input.addEventListener('input', (e) => {
+                        searchTerm = e.target.value;
+                        renderSearchResults();
+                    });
+                } else {
+                    existingInput.value = searchTerm;
+                }
+                
+                renderSearchResults();
+
+            } else if (currentTab === 'tables') {
+                
+                const grouped = {};
+                guestData.forEach(guest => {
+                    if (!grouped[guest.table]) grouped[guest.table] = [];
+                    grouped[guest.table].push(guest);
+                });
+
+                const customSort = (a, b) => {
+                    if (a === "主桌") return -1;
+                    if (b === "主桌") return 1;
+                    if (a === "未安排") return 999;
+                    if (b === "未安排") return -1;
+                    const numA = parseInt(a.match(/\d+/)) || 998;
+                    const numB = parseInt(b.match(/\d+/)) || 998;
+                    return numA - numB;
+                };
+                const orderedTables = Object.keys(grouped).sort(customSort);
+
+                container.innerHTML = `
+                    <div class="space-y-6 fade-in">
+                        <div class="bg-white rounded-2xl shadow-sm overflow-hidden border border-champagne-100 p-4">
+                            <h2 class="text-base font-bold text-gray-700 mb-3 flex items-center justify-center">
+                                <i class="fa-solid fa-map text-champagne-500 mr-2"></i>
+                                全場座位圖
+                            </h2>
+                            <p class="text-xs text-center text-champagne-600 mb-3">（點擊圓圈可查看該桌賓客名單，全滿為綠色）</p>
+                            ${generateMapHTML(null)}
+                        </div>
+
+                        <div class="space-y-4">
+                            <h2 class="text-base font-bold text-gray-700 px-2 flex items-center justify-center mt-8 mb-2">
+                                <i class="fa-solid fa-clipboard-list text-champagne-500 mr-2"></i>
+                                桌次名單總覽
+                            </h2>
+                            ${orderedTables.map(tableName => {
+                                const tableGuests = grouped[tableName];
+                                const seatedCount = tableGuests.filter(g => g.seated).length;
+                                const isTableFull = tableGuests.length > 0 && seatedCount === tableGuests.length;
+                                
+                                return `
+                                <div class="bg-white rounded-2xl shadow-sm overflow-hidden border ${isTableFull ? 'border-green-400' : 'border-champagne-100'} mb-4 transition-colors">
+                                    <div class="${isTableFull ? 'bg-green-500 text-white border-green-600' : 'bg-gradient-to-r from-champagne-50 to-white text-champagne-800 border-champagne-100'} px-5 py-3 border-b flex justify-between items-center transition-colors">
+                                        <h3 class="font-bold text-base font-serif truncate pr-2">${tableName}</h3>
+                                        <span class="text-xs font-semibold px-2 py-1 rounded-lg shadow-sm shrink-0 ${isTableFull ? 'bg-white text-green-600' : 'bg-white border border-champagne-200 text-champagne-600'}">
+                                            入座 ${seatedCount}/${tableGuests.length}
+                                        </span>
+                                    </div>
+                                    <div class="p-4 ${isTableFull ? 'bg-green-50/20' : ''}">
+                                        <div class="flex flex-wrap gap-2">
+                                            ${tableGuests.map(guest => `
+                                                <div onclick="toggleSeated(${guest.sheetRowNumber})" class="cursor-pointer inline-flex items-center border rounded-lg px-3 py-1.5 transition-all active:scale-95 ${guest.seated ? 'bg-green-50 border-green-300 text-green-800' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-champagne-50'}">
+                                                    <i class="fa-solid ${guest.seated ? 'fa-check text-green-500' : 'fa-user text-champagne-400'} text-[10px] mr-1.5"></i>
+                                                    <span class="text-sm font-medium">${guest.name}</span>
+                                                    ${guest.tags.length > 0 ? `
+                                                        <span class="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-sm font-bold ${guest.seated ? 'bg-green-100 text-green-700' : 'bg-champagne-100 text-champagne-600'}">
+                                                            ${guest.tags.join(', ')}
+                                                        </span>
+                                                    ` : ''}
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                            `}).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // ==========================================
+        // 4. 互動功能函數
+        // ==========================================
+        
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('tab-search').className = `flex flex-col items-center justify-center w-full py-2 rounded-xl transition-all duration-300 ${tab === 'search' ? 'text-champagne-600 bg-champagne-50 pointer-events-auto' : 'text-gray-400 hover:text-champagne-500 pointer-events-auto'}`;
+            document.getElementById('tab-tables').className = `flex flex-col items-center justify-center w-full py-2 rounded-xl transition-all duration-300 ${tab === 'tables' ? 'text-champagne-600 bg-champagne-50 pointer-events-auto' : 'text-gray-400 hover:text-champagne-500 pointer-events-auto'}`;
+            window.scrollTo(0, 0);
+            render();
+        }
+
+        function clearSearch() {
+            searchTerm = '';
+            const input = document.getElementById('searchInput');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+            renderSearchResults();
+        }
+
+        function openModal(tableName) {
+            document.getElementById('modal-table-name').innerText = tableName;
+            document.getElementById('modal-map-container').innerHTML = `
+                ${generateMapHTML(tableName)}
+                <p class="text-center text-xs text-gray-500 mt-5 flex items-center justify-center font-medium bg-white py-2 rounded-lg border border-champagne-50 shadow-sm mx-4">
+                    <span class="w-2.5 h-2.5 bg-champagne-500 rounded-full animate-ping mr-2"></span>
+                    閃爍處為賓客指定桌次
+                </p>
+                <p class="text-center text-[10px] text-champagne-400 mt-2">（點擊地圖上的圓圈可查看名單）</p>
+            `;
+            document.getElementById('map-modal').classList.remove('hidden');
+            document.getElementById('map-modal').classList.add('flex');
+            document.body.style.overflow = 'hidden'; 
+        }
+
+        function closeModal() {
+            document.getElementById('map-modal').classList.add('hidden');
+            document.getElementById('map-modal').classList.remove('flex');
+            if (document.getElementById('table-guests-modal').classList.contains('hidden')) {
+                document.body.style.overflow = ''; 
+            }
+        }
+
+        function openTableGuestsModal(mapTableName) {
+            document.getElementById('tg-modal-title').innerText = mapTableName;
+            
+            const guests = guestData.filter(g => g.table === mapTableName);
+            const seatedCount = guests.filter(g => g.seated).length;
+            
+            let contentHTML = '';
+            if (guests.length === 0) {
+                contentHTML = `
+                    <div class="text-center py-8 text-gray-400">
+                        <i class="fa-solid fa-chair text-3xl mb-3 text-champagne-200"></i>
+                        <p>目前尚無安排賓客</p>
+                    </div>
+                `;
+            } else {
+                contentHTML = `
+                    <div class="flex items-center justify-between mb-4 px-1">
+                        <span class="text-sm text-gray-500 font-medium">本桌入座 <span class="text-green-600 font-bold text-base">${seatedCount}</span> / ${guests.length} 位</span>
+                    </div>
+                    <div class="space-y-3">
+                        ${guests.map(guest => `
+                            <div class="bg-white p-3.5 rounded-xl shadow-sm border flex items-center justify-between transition-colors ${guest.seated ? 'border-green-400 bg-green-50/50' : 'border-champagne-100'}">
+                                <div class="flex flex-col gap-1.5">
+                                    <div class="flex items-center">
+                                        <div class="w-8 h-8 rounded-full flex items-center justify-center mr-3 border ${guest.seated ? 'bg-green-100 text-green-600 border-green-200' : 'bg-champagne-50 text-champagne-500 border-champagne-200'}">
+                                            <i class="fa-solid fa-user text-xs"></i>
+                                        </div>
+                                        <span class="font-bold text-lg ${guest.seated ? 'text-green-800' : 'text-gray-700'}">${guest.name}</span>
+                                    </div>
+                                    ${guest.tags.length > 0 ? `
+                                        <div class="flex gap-1.5 ml-[44px]">
+                                            ${guest.tags.map(tag => {
+                                                let icon = '';
+                                                if (tag.includes('兒童')) icon = `<i class="fa-solid fa-baby ${guest.seated ? 'text-green-600' : 'text-champagne-500'}"></i>`;
+                                                else if (tag.includes('喜餅')) icon = `<i class="fa-solid fa-gift ${guest.seated ? 'text-green-600' : 'text-champagne-500'}"></i>`;
+                                                else if (tag.includes('素食')) icon = '<i class="fa-solid fa-leaf text-green-500"></i>';
+                                                return `
+                                                <span class="inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-white border ${guest.seated ? 'text-green-700 border-green-200' : 'text-gray-500 border-champagne-100'}" title="${tag}">
+                                                    ${icon}<span class="ml-1">${tag}</span>
+                                                </span>`;
+                                            }).join('')}
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                
+                                <!-- 入座開關 -->
+                                <button onclick="toggleSeated(${guest.sheetRowNumber})" class="shrink-0 ml-3 w-10 h-10 rounded-full flex items-center justify-center border transition-all active:scale-90 ${guest.seated ? 'bg-green-500 border-green-600 text-white shadow-md' : 'bg-gray-50 border-gray-200 text-gray-400 hover:text-green-500'}">
+                                    <i class="fa-solid ${guest.seated ? 'fa-check' : 'fa-clipboard-check'} text-lg"></i>
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            document.getElementById('tg-modal-content').innerHTML = contentHTML;
+            document.getElementById('table-guests-modal').classList.remove('hidden');
+            document.getElementById('table-guests-modal').classList.add('flex');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeTableGuestsModal() {
+            document.getElementById('table-guests-modal').classList.add('hidden');
+            document.getElementById('table-guests-modal').classList.remove('flex');
+            
+            if (document.getElementById('map-modal').classList.contains('hidden')) {
+                document.body.style.overflow = '';
+            }
+        }
+
+        window.onload = function() {
+            fetchGoogleSheetData();
+            
+            const style = document.createElement('style');
+            style.innerHTML = `.pb-safe { padding-bottom: env(safe-area-inset-bottom); }`;
+            document.head.appendChild(style);
+        };
+
+    </script>
+</body>
+</html>
